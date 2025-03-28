@@ -1,61 +1,84 @@
 class PriorityScheduling:
-    def __init__(self, processes, preemptive=False):
-        self.processes = sorted(processes, key=lambda x: (x[1], x[3]))  # Sort by arrival time, then priority
-        self.preemptive = preemptive
+    def __init__(self, processes, is_preemptive):
+        self.processes = processes
+        self.is_preemptive = is_preemptive
+
+    def add_to_ready_queue(self, processes, current_time, index, ready_queue, remaining_bt):
+        while index < len(processes) and processes[index][1] <= current_time:
+            pid, _, _, priority = processes[index]
+            ready_queue.append((pid, priority, remaining_bt[pid]))
+            index += 1
+        return index
+
+    def _preemptive_priority(self):
+        processes = sorted(self.processes, key=lambda x: x[1])
+        timeline = []
+        current_time = 0
+        ready_queue = []
+        remaining_bt = {pid: bt for pid, _, bt, _ in processes}
+        completed = set()
+        index = 0
+
+        while len(completed) < len(processes):
+            index = self.add_to_ready_queue(processes, current_time, index, ready_queue, remaining_bt)
+
+            if not ready_queue:
+                if index < len(processes):
+                    current_time = processes[index][1]
+                else:
+                    break
+                continue
+
+            ready_queue.sort(key=lambda x: (-x[1], x[0]))
+            pid, _, _ = ready_queue.pop(0)
+            start_time = current_time
+            current_time += 1
+            remaining_bt[pid] -= 1
+
+            index = self.add_to_ready_queue(processes, current_time, index, ready_queue, remaining_bt)
+
+            if remaining_bt[pid] > 0:
+                ready_queue.append((pid, processes[pid-1][3], remaining_bt[pid]))
+            else:
+                completed.add(pid)
+
+            timeline.append((pid, start_time, current_time))
+
+        return timeline
+
+    def _non_preemptive_priority(self):
+        processes = sorted(self.processes, key=lambda x: x[1])
+        timeline = []
+        current_time = 0
+        ready_queue = []
+        completed = set()
+        index = 0
+
+        while len(completed) < len(processes):
+            while index < len(processes) and processes[index][1] <= current_time:
+                pid, _, bt, priority = processes[index]
+                ready_queue.append((pid, priority, bt))
+                index += 1
+
+            if not ready_queue:
+                if index < len(processes):
+                    current_time = processes[index][1]
+                else:
+                    break
+                continue
+
+            ready_queue.sort(key=lambda x: (-x[1], x[0]))
+            pid, _, bt = ready_queue.pop(0)
+            start_time = current_time
+            current_time += bt
+
+            timeline.append((pid, start_time, current_time))
+            completed.add(pid)
+
+        return timeline
 
     def calculate_completion_time(self):
-        if self.preemptive:
+        if self.is_preemptive:
             return self._preemptive_priority()
         else:
             return self._non_preemptive_priority()
-
-    def _non_preemptive_priority(self):
-        current_time = 0
-        timeline = []
-        remaining_processes = self.processes.copy()
-
-        while remaining_processes:
-            available_processes = [p for p in remaining_processes if p[1] <= current_time]
-            if available_processes:
-                highest_priority = min(available_processes, key=lambda x: (x[3], x[1]))  
-                remaining_processes.remove(highest_priority)
-                start_time = current_time
-                end_time = start_time + highest_priority[2]
-                timeline.append((highest_priority[0], start_time, end_time))
-                current_time = end_time
-            else:
-                current_time += 1  # CPU idle
-        
-        return timeline
-
-    def _preemptive_priority(self):
-        current_time = 0
-        timeline = []
-        remaining_processes = {p[0]: [p[1], p[2], p[3]] for p in self.processes}  # {PID: [Arrival Time, Remaining Burst, Priority]}
-        current_pid = None
-        start_time = None
-
-        while remaining_processes:
-            available_processes = {pid: info for pid, info in remaining_processes.items() if info[0] <= current_time}
-            if available_processes:
-                highest_priority = min(available_processes, key=lambda x: (available_processes[x][2], available_processes[x][0]))
-                if current_pid != highest_priority:
-                    if current_pid is not None:
-                        timeline.append((current_pid, start_time, current_time))
-                    current_pid = highest_priority
-                    start_time = current_time
-                remaining_processes[highest_priority][1] -= 1
-                current_time += 1
-                if remaining_processes[highest_priority][1] == 0:
-                    timeline.append((current_pid, start_time, current_time))
-                    current_pid = None
-                    start_time = None
-                    del remaining_processes[highest_priority]
-            else:
-                if current_pid is not None:
-                    timeline.append((current_pid, start_time, current_time))
-                    current_pid = None
-                    start_time = None
-                current_time += 1
-        
-        return timeline
